@@ -13,8 +13,9 @@ import (
 )
 
 var (
-	maxerr = flag.Int("maxerr", 10, "The maximum error for every benchmark")
+	maxerr = flag.Int("maxerr", 15, "The maximum error for every benchmark")
 	maxrun = flag.Int("maxrun", -1, "The maximum run count")
+	ignore = flag.String("ignore", "", "Ignored benchmark methods")
 	run    = flag.String("run", "", "Run this command if exceed maximum error")
 
 	runcount = 0
@@ -43,6 +44,7 @@ func main() {
 begin:
 	allItems, err := parseAllItems()
 	if err != nil {
+		println("parseAllItems error:", err.Error())
 		err = rerun()
 		if err != nil {
 			panic(err)
@@ -50,7 +52,7 @@ begin:
 		goto begin
 	}
 	for _, i := range allItems {
-		if i.delta > *maxerr {
+		if i.delta > *maxerr && !matchIgnore(i.rawname) {
 			println(i.String(), "exceed", strconv.Itoa(*maxerr)+"%")
 			if *run == "" {
 				os.Exit(1)
@@ -119,11 +121,13 @@ func parseAllItems() ([]*Item, error) {
 		}
 		// Find from.
 		nameFindFrom := strings.LastIndex(name, "/")
-		if nameFindFrom == -1 || nameFindFrom == len(name)-1 {
-			panic(fmt.Sprintf("invalid name: %s", v[0]))
+		if nameFindFrom == -1 {
+			item.from = name
+			item.methodname = name
+		} else {
+			item.from = name[nameFindFrom+1:]
+			item.methodname = name[:nameFindFrom]
 		}
-		item.from = name[nameFindFrom+1:]
-		item.methodname = name[:nameFindFrom]
 		// Find timeop.
 		timeop, err := strconv.ParseFloat(v[1], 64)
 		if err != nil {
@@ -161,4 +165,17 @@ func rerun() error {
 		return err
 	}
 	return nil
+}
+
+func matchIgnore(s string) bool {
+	if *ignore == "" {
+		return false
+	}
+	ignores := strings.Split(*ignore, ",")
+	for _, v := range ignores {
+		if strings.Contains(s, v) {
+			return true
+		}
+	}
+	return false
 }
