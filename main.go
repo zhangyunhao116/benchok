@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"flag"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -15,58 +14,80 @@ import (
 var globalConfig Config
 
 func main() {
+	// Init config.
 	flag.Parse()
 	if *debug {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 	readConfig()
-begin:
+
+	// Start.
+	execBeforeRun()
+parse:
+	logrus.Debugln("parseAllItems start")
 	allItems, err := parseAllItems()
 	if err != nil {
-		logrus.Warningln("parseAllItems: ", err.Error())
-		err = rerun()
+		logrus.Debugln("parseAllItems: ", err.Error())
+		err = execrun()
 		if err != nil {
 			logrus.Fatalln(err)
+			return
 		}
-		goto begin
+		goto parse
 	}
+	logrus.Debugln("parseAllItems success")
 	for _, i := range allItems {
 		if i.delta > int(*globalConfig.Maxerr) && !matchIgnore(i.rawname) {
-			logrus.Info(i.String(), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
-			if *globalConfig.Run == "" {
-				os.Exit(1)
-				return
-			}
+			logrus.Infoln(i.String(), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
 			// Rerun.
-			err = rerun()
+			err = execrun()
 			if err != nil {
 				logrus.Fatalln(err)
+				return
 			}
-			goto begin
+			goto parse
 		}
 	}
+	logrus.Debugln("all success")
+	execAfterRun()
 }
 
-func rerun() error {
-	logrus.Debugln("rerun")
+func execrun() error {
 	runcount++
+	logrus.Debugf("run id: %d", runcount)
 	if *globalConfig.MaxRun > 0 {
 		if runcount >= *globalConfig.MaxRun {
 			return errors.New("exceed maximum run count")
 		}
 	}
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	cmd := exec.Command("bash", "-c", *globalConfig.Run)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+
+	_, err := execCommandPrint("run", *globalConfig.Run)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func execBeforeRun() {
+	if globalConfig.BeforeRun != nil && *globalConfig.BeforeRun != "" {
+		logrus.Debugln("beforerun start")
+		_, err := execCommandPrint("before", *globalConfig.BeforeRun)
+		if err != nil {
+			logrus.Fatalln("beforerun:", err.Error())
+		}
+		logrus.Debugln("beforerun success")
+	}
+}
+
+func execAfterRun() {
+	if globalConfig.AfterRun != nil && *globalConfig.AfterRun != "" {
+		logrus.Debugln("afterrun start")
+		_, err := execCommandPrint("afterrun", *globalConfig.AfterRun)
+		if err != nil {
+			logrus.Fatalln("afterrun:", err.Error())
+		}
+		logrus.Debugln("afterrun success")
+	}
 }
 
 func matchIgnore(s string) bool {
@@ -80,4 +101,33 @@ func matchIgnore(s string) bool {
 		}
 	}
 	return false
+}
+
+func execCommand(prefix, cmd string) (string, error) {
+	var stderr bytes.Buffer
+	command := exec.Command("bash", "-c", cmd)
+	command.Stderr = &stderr
+	out, err := command.Output()
+	if err != nil {
+		return stderr.String(), errors.New(prefix + ": " + err.Error())
+	}
+	return string(out), nil
+}
+
+func execCommandPrint(prefix, cmd string) (string, error) {
+	out, err := execCommand(prefix, cmd)
+	if err != nil {
+		logrus.Warningf(`exec "%s" error: `, prefix)
+	}
+	print(string(out))
+	return out, err
+}
+
+func execCommandPrintOnlyFailed(prefix, cmd string) (string, error) {
+	out, err := execCommand(prefix, cmd)
+	if err != nil {
+		logrus.Warningf(`exec "%s" error: `, prefix)
+		print(string(out))
+	}
+	return out, err
 }

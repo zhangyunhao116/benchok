@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/csv"
-	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -28,18 +26,15 @@ func (i *Item) String() string {
 }
 
 func parseAllItems() ([]*Item, error) {
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-	cmd := exec.Command("bash", "-c", "benchstat -csv "+*globalConfig.File)
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	out, err := execCommand("benchstat: ", "benchstat -csv "+*globalConfig.File)
 	if err != nil {
-		return nil, errors.New("run error, " + err.Error())
+		if logrus.GetLevel() == logrus.DebugLevel {
+			logrus.Warningln("parseAllItem stderr:")
+			println(out)
+		}
+		return nil, err
 	}
-	inputStr := stdout.String()
+	inputStr := out
 	// Parse csv.
 	reader := csv.NewReader(bytes.NewReader([]byte(inputStr)))
 	lines, err := reader.ReadAll()
@@ -47,11 +42,11 @@ func parseAllItems() ([]*Item, error) {
 		return nil, err
 	}
 	if len(lines) <= 1 {
-		logrus.Fatalln(fmt.Sprintln("too few lines: ", len(lines)))
+		logrus.Fatalln(fmt.Sprintln("parse: too few lines: ", len(lines)))
 	}
 	firstLine := lines[0]
 	if firstLine[0] != "name" || firstLine[1] != "time/op (ns/op)" || firstLine[2] != "±" {
-		logrus.Fatalln(fmt.Sprintf("invalid first line: %v, want (%s)", len(lines), "name,time/op (ns/op),±"))
+		logrus.Fatalln(fmt.Sprintf("parse: invalid first line: %v, want (%s)", len(lines), "name,time/op (ns/op),±"))
 	}
 
 	var allItems []*Item
@@ -59,7 +54,7 @@ func parseAllItems() ([]*Item, error) {
 	for _, v := range lines[1:] {
 		// Default/70Enqueue30Dequeue/LinkedQ-100,1.00808E+02,3%
 		if len(v) != 3 {
-			logrus.Fatalln(fmt.Sprintf("invalid line: %v", v))
+			logrus.Fatalln(fmt.Sprintf("parse: invalid line: %v", v))
 		}
 		item := new(Item)
 		name := v[0]
@@ -90,13 +85,13 @@ func parseAllItems() ([]*Item, error) {
 		// Find timeop.
 		timeop, err := strconv.ParseFloat(v[1], 64)
 		if err != nil {
-			logrus.Fatalln(fmt.Sprintln("invalid time/op: ", v[1]))
+			logrus.Fatalln(fmt.Sprintln("parse: invalid time/op: ", v[1]))
 		}
 		item.timeop = timeop
 		item.timeopstr = fmt.Sprintf("%.2f", timeop)
 		delta, err := strconv.Atoi(v[2][:len(v[2])-1])
 		if err != nil {
-			logrus.Fatalln(fmt.Sprintln("invalid delta: ", v[2]))
+			logrus.Fatalln(fmt.Sprintln("parse: invalid delta: ", v[2]))
 		}
 		item.delta = delta
 		// Add this item.
