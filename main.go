@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -11,7 +12,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var globalConfig Config
+var (
+	globalConfig Config
+	globalResult *benchmarkResult
+)
 
 func main() {
 	// Init config.
@@ -24,7 +28,7 @@ func main() {
 	execBeforeRun()
 parse:
 	logrus.Debugln("parseAllItems start")
-	speedTable, err := parseAllItemOnlySpeed()
+	_, err := parseAllItemOnlySpeed()
 	if err != nil {
 		logrus.Debugln("parseAllItems: ", err.Error())
 		err = execrun()
@@ -35,10 +39,18 @@ parse:
 		goto parse
 	}
 	logrus.Debugln("parseAllItems success")
-	for _, row := range speedTable.Rows {
-		diff := parseDiff(row.Metrics[0].FormatDiff())
-		if diff > int(*globalConfig.Maxerr) && !matchIgnore(row.Benchmark) {
-			logrus.Infoln(row.Benchmark, row.Metrics[0].FormatDiff(), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
+	if globalResult == nil {
+		res, err := newBenchmarkResult()
+		if err != nil {
+			logrus.Fatalln(err)
+		}
+		globalResult = res
+	} else {
+		globalResult.merge()
+	}
+	for name, diff := range globalResult.benchmarkInfo {
+		if diff > int(*globalConfig.Maxerr) && !matchIgnore(name) {
+			logrus.Infoln(name, fmt.Sprintf("%d%%", diff), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
 			// Rerun.
 			err = execrun()
 			if err != nil {
@@ -49,6 +61,16 @@ parse:
 		}
 	}
 	logrus.Debugln("all success")
+	err = globalResult.merge()
+	if err != nil {
+		logrus.Fatal(err)
+		return
+	}
+	err = globalResult.writeLocal("qqq.txt")
+	if err != nil {
+		logrus.Fatal(err)
+		return
+	}
 	execAfterRun()
 }
 
