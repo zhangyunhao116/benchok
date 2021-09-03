@@ -13,8 +13,9 @@ import (
 var (
 	debug = flag.Bool("v", false, "debug mode")
 
-	defaultMaxErr uint = 15
-	defaultMaxRun      = -1
+	defaultMaxErr uint    = 15
+	defaultMaxRun         = -1
+	defaultAlpha  float64 = 0.01
 
 	runcount = 0
 )
@@ -34,6 +35,8 @@ type Config struct {
 	MaxRun *int `yaml:"maxrun"`
 	// Ignored benchmark methods(comma-separated)
 	Ignore *string `yaml:"ignore"`
+
+	Alpha *float64 `yaml:"alpha"`
 }
 
 func (c *Config) SetDefault() {
@@ -65,6 +68,10 @@ func (c *Config) SetDefault() {
 		maxrun := defaultMaxRun
 		c.MaxRun = &maxrun
 	}
+	if c.Alpha == nil {
+		alpha := defaultAlpha
+		c.Alpha = &alpha
+	}
 }
 
 func (c Config) String() string {
@@ -75,13 +82,7 @@ func readConfig() {
 	c := readLocalConfig(flag.Arg(0))
 	if c != nil {
 		// Use local config.
-		globalConfig.File = c.File
-		globalConfig.MaxRun = c.MaxRun
-		globalConfig.Maxerr = c.Maxerr
-		globalConfig.Ignore = c.Ignore
-		globalConfig.BeforeRun = c.BeforeRun
-		globalConfig.Run = c.Run
-		globalConfig.AfterRun = c.AfterRun
+		globalConfig = *c
 	}
 	// Give default value if not set.
 	globalConfig.SetDefault()

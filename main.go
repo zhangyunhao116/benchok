@@ -20,12 +20,11 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 	readConfig()
-
 	// Start.
 	execBeforeRun()
 parse:
 	logrus.Debugln("parseAllItems start")
-	allItems, err := parseAllItems()
+	speedTable, err := parseAllItemOnlySpeed()
 	if err != nil {
 		logrus.Debugln("parseAllItems: ", err.Error())
 		err = execrun()
@@ -36,9 +35,10 @@ parse:
 		goto parse
 	}
 	logrus.Debugln("parseAllItems success")
-	for _, i := range allItems {
-		if i.delta > int(*globalConfig.Maxerr) && !matchIgnore(i.rawname) {
-			logrus.Infoln(i.String(), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
+	for _, row := range speedTable.Rows {
+		diff := parseDiff(row.Metrics[0].FormatDiff())
+		if diff > int(*globalConfig.Maxerr) && !matchIgnore(row.Benchmark) {
+			logrus.Infoln(row.Benchmark, row.Metrics[0].FormatDiff(), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
 			// Rerun.
 			err = execrun()
 			if err != nil {
@@ -91,7 +91,7 @@ func execAfterRun() {
 }
 
 func matchIgnore(s string) bool {
-	if globalConfig.Ignore == nil || *globalConfig.Ignore == "" {
+	if *globalConfig.Ignore == "" {
 		return false
 	}
 	ignores := strings.Split(*globalConfig.Ignore, ",")

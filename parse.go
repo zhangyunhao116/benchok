@@ -1,13 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"encoding/csv"
-	"fmt"
+	"errors"
+	"os"
 	"strconv"
-	"strings"
 
 	"github.com/sirupsen/logrus"
+	"golang.org/x/perf/benchstat"
 )
 
 type Item struct {
@@ -25,77 +24,52 @@ func (i *Item) String() string {
 	return i.rawname + " " + strconv.Itoa(i.delta) + "%"
 }
 
-func parseAllItems() ([]*Item, error) {
-	out, err := execCommand("benchstat: ", "benchstat -csv "+*globalConfig.File)
-	if err != nil {
-		if logrus.GetLevel() == logrus.DebugLevel {
-			logrus.Warningln("parseAllItem stderr:")
-			println(out)
-		}
-		return nil, err
+func parseAllItem() (*benchstat.Collection, error) {
+	c := &benchstat.Collection{
+		Alpha:      *globalConfig.Alpha,
+		AddGeoMean: false,
+		DeltaTest: func(old, new *benchstat.Metrics) (float64, error) {
+			return -1, nil
+		},
 	}
-	inputStr := out
-	// Parse csv.
-	reader := csv.NewReader(bytes.NewReader([]byte(inputStr)))
-	lines, err := reader.ReadAll()
+	f, err := os.Open(*globalConfig.File)
 	if err != nil {
 		return nil, err
 	}
-	if len(lines) <= 1 {
-		logrus.Fatalln(fmt.Sprintln("parse: too few lines: ", len(lines)))
+	if err := c.AddFile(*globalConfig.File, f); err != nil {
+		return nil, err
 	}
-	firstLine := lines[0]
-	if firstLine[0] != "name" || firstLine[1] != "time/op (ns/op)" || firstLine[2] != "±" {
-		logrus.Fatalln(fmt.Sprintf("parse: invalid first line: %v, want (%s)", len(lines), "name,time/op (ns/op),±"))
+	f.Close()
+
+	return c, nil
+}
+
+func parseAllItemOnlySpeed() (*benchstat.Table, error) {
+	collection, err := parseAllItem()
+	if err != nil {
+		return nil, err
 	}
 
-	var allItems []*Item
-	// Parse all data.
-	for _, v := range lines[1:] {
-		// Default/70Enqueue30Dequeue/LinkedQ-100,1.00808E+02,3%
-		if len(v) != 3 {
-			logrus.Fatalln(fmt.Sprintf("parse: invalid line: %v", v))
+	// Get table `time/op`.
+	var speedTable *benchstat.Table
+	for _, v := range collection.Tables() {
+		if v.Metric == "time/op" {
+			speedTable = v
+			break
 		}
-		item := new(Item)
-		name := v[0]
-		item.rawname = name
-		item.rawline = strings.Join(v, ",")
-		// Find CPU numbers.
-		nameFindSnake := strings.LastIndex(name, "-")
-		if nameFindSnake != -1 {
-			cpu, err := strconv.Atoi(name[nameFindSnake+1:])
-			if err == nil {
-				item.cpu = cpu
-			}
-		} else {
-			item.cpu = 1
-		}
-		if nameFindSnake != -1 && item.cpu != 1 { // remove "-128", 128 is the CPU numbers
-			name = name[:nameFindSnake]
-		}
-		// Find from.
-		nameFindFrom := strings.LastIndex(name, "/")
-		if nameFindFrom == -1 {
-			item.from = name
-			item.methodname = name
-		} else {
-			item.from = name[nameFindFrom+1:]
-			item.methodname = name[:nameFindFrom]
-		}
-		// Find timeop.
-		timeop, err := strconv.ParseFloat(v[1], 64)
-		if err != nil {
-			logrus.Fatalln(fmt.Sprintln("parse: invalid time/op: ", v[1]))
-		}
-		item.timeop = timeop
-		item.timeopstr = fmt.Sprintf("%.2f", timeop)
-		delta, err := strconv.Atoi(v[2][:len(v[2])-1])
-		if err != nil {
-			logrus.Fatalln(fmt.Sprintln("parse: invalid delta: ", v[2]))
-		}
-		item.delta = delta
-		// Add this item.
-		allItems = append(allItems, item)
 	}
-	return allItems, nil
+
+	if speedTable == nil {
+		return nil, errors.New("can not find `time/op table`")
+	}
+	return speedTable, nil
+}
+
+// `5%` -> 5
+func parseDiff(s string) int {
+	res, err := strconv.Atoi(s[0 : len(s)-1])
+	if err != nil {
+		logrus.Fatalf("parseDiff: (%s) %s", s, err.Error())
+	}
+	return res
 }
