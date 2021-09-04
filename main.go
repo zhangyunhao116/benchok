@@ -48,17 +48,27 @@ parse:
 	} else {
 		globalResult.merge()
 	}
-	for name, diff := range globalResult.benchmarkInfo {
+	var (
+		exceedCount int
+		exceedInfo  string
+	)
+	for name, diff := range globalResult.info {
 		if diff > int(*globalConfig.Maxerr) && !matchIgnore(name) {
-			logrus.Infoln(name, fmt.Sprintf("%d%%", diff), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
-			// Rerun.
-			err = execrun()
-			if err != nil {
-				logrus.Fatalln(err)
-				return
+			if exceedCount == 0 {
+				exceedInfo = fmt.Sprintln(name, fmt.Sprintf("%d%%", diff), "exceed", strconv.Itoa(int(*globalConfig.Maxerr))+"%")
 			}
-			goto parse
+			exceedCount++
 		}
+	}
+	if exceedCount != 0 {
+		logrus.Infoln(fmt.Sprintf("(%d/%d)", exceedCount, len(globalResult.info)), exceedInfo)
+		// Rerun.
+		err = execrun()
+		if err != nil {
+			logrus.Fatalln(err)
+			return
+		}
+		goto parse
 	}
 	logrus.Debugln("all success")
 	err = globalResult.merge()
@@ -66,7 +76,7 @@ parse:
 		logrus.Fatal(err)
 		return
 	}
-	err = globalResult.writeLocal("qqq.txt")
+	err = globalResult.writeLocal(*globalConfig.File)
 	if err != nil {
 		logrus.Fatal(err)
 		return

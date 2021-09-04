@@ -1,16 +1,19 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strings"
 
 	"github.com/sirupsen/logrus"
+	"github.com/zhangyunhao116/skipset"
 )
 
 type benchmarkResult struct {
-	rawrows       []string
-	benchmarkInfo map[string]int
+	prefix   []string
+	suffix   []string
+	roworder []string            // row's order
+	rows     map[string][]string // "Uint64/50Dequeue50Enqueue/LSCQ-8" : rows
+	info     map[string]int      // "Uint64/50Dequeue50Enqueue/LSCQ-8"  : 5 (%)
 }
 
 func (r *benchmarkResult) writeLocal(s string) error {
@@ -27,7 +30,22 @@ func (r *benchmarkResult) writeLocal(s string) error {
 	if err != nil {
 		return err
 	}
-	_, err = f.Write([]byte(strings.Join(r.rawrows, "\n")))
+
+	// Add prefix.
+	var content string
+	content += strings.Join(r.prefix, "\n")
+
+	// Add rows.
+	var rows []string
+	for _, benchmethod := range r.roworder {
+		rows = append(rows, r.rows[benchmethod]...)
+	}
+	content += "\n" + strings.Join(rows, "\n")
+
+	// Add suffix.
+	content += "\n" + strings.Join(r.suffix, "\n")
+
+	_, err = f.Write([]byte(content))
 	if err != nil {
 		return err
 	}
@@ -41,21 +59,14 @@ func (r *benchmarkResult) merge() error {
 		return err
 	}
 
-	for newname, newdiff := range res.benchmarkInfo {
-		if r.benchmarkInfo[newname] > newdiff {
+	for benchmarkMethodName, diff := range res.info {
+		if r.info[benchmarkMethodName] > diff {
 			// Do replace.
-			logrus.Debugln("merge:", newname, r.benchmarkInfo[newname], "to", newdiff)
-			r.benchmarkInfo[newname] = newdiff
-			for i, lines := range r.rawrows {
-				// Assert len(new) == len(old)
-				if strings.Index(lines+" ", newname) != -1 {
-					println("!!!")
-					r.rawrows[i] = res.rawrows[i]
-				}
-			}
+			logrus.Debugln("merge:", benchmarkMethodName, r.info[benchmarkMethodName], "to", diff)
+			r.info[benchmarkMethodName] = diff
+			r.rows[benchmarkMethodName] = res.rows[benchmarkMethodName]
 		}
 	}
-	r.writeLocal(fmt.Sprintf("%d.txt", runcount))
 	return nil
 }
 
@@ -64,17 +75,56 @@ func newBenchmarkResult() (*benchmarkResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := new(benchmarkResult)
-	r.benchmarkInfo = make(map[string]int, 100)
-	r.rawrows = strings.Split(string(result), "\n")
 
+	r := new(benchmarkResult)
+	// Init fields.
+	r.info = make(map[string]int)
+	r.prefix = make([]string, 0)
+	r.suffix = make([]string, 0)
+	r.roworder = make([]string, 0)
+	r.rows = make(map[string][]string)
+
+	// Init info.
+	allBenchmark := skipset.NewString()
 	table, err := parseAllItemOnlySpeed()
 	if err != nil {
 		return nil, err
 	}
-
 	for _, row := range table.Rows {
-		r.benchmarkInfo[row.Benchmark] = parseDiff(row.Metrics[0].FormatDiff())
+		r.info[row.Benchmark] = parseDiff(row.Metrics[0].FormatDiff())
+		allBenchmark.Add(row.Benchmark)
+	}
+
+	// Init prefix.
+	allrows := strings.Split(string(result), "\n")
+	for _, row := range allrows {
+		for _, v := range []string{"goos: ", "goarch: ", "pkg: ", "cpu: "} {
+			if strings.Index(row, v) == 0 {
+				r.prefix = append(r.prefix, row)
+			}
+		}
+		for _, v := range []string{"PASS", "ok "} {
+			if strings.Index(row, v) == 0 {
+				r.suffix = append(r.suffix, row)
+			}
+		}
+	}
+
+	// Init row and roworder.
+	for _, row := range allrows {
+		allBenchmark.Range(func(benchmarkMethod string) bool {
+			pre := "Benchmark" + benchmarkMethod + " "
+			if strings.Index(row, pre) == 0 {
+				// Add this row.
+				if r.rows[benchmarkMethod] == nil {
+					// First line.
+					r.roworder = append(r.roworder, benchmarkMethod)
+				}
+				r.rows[benchmarkMethod] = append(r.rows[benchmarkMethod], row)
+				return false
+			}
+			return true
+		})
 	}
 
 	return r, nil
