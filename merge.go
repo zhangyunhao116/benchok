@@ -60,7 +60,7 @@ func (r *benchmarkResult) merge() error {
 	}
 
 	for benchmarkMethodName, diff := range res.info {
-		if r.info[benchmarkMethodName] > diff {
+		if r.info[benchmarkMethodName] > int(*globalConfig.Maxerr) && r.info[benchmarkMethodName] > diff {
 			// Do replace.
 			logrus.Debugln("merge:", benchmarkMethodName, r.info[benchmarkMethodName], "to", diff)
 			r.info[benchmarkMethodName] = diff
