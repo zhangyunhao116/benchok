@@ -31,27 +31,15 @@ parse:
 	_, err := parseAllItemOnlySpeed()
 	if err != nil {
 		logrus.Debugln("parseAllItems: ", err.Error())
-		err = execrun()
-		if err != nil {
-			logrus.Fatalln(err)
-			return
-		}
+		execrun()
 		goto parse
 	}
 	logrus.Debugln("parseAllItems success")
-	if globalResult == nil {
-		res, err := newBenchmarkResult()
-		if err != nil {
-			logrus.Fatalln(err)
-		}
-		globalResult = res
-	} else {
-		globalResult.merge()
-	}
 	var (
 		exceedCount int
 		exceedInfo  string
 	)
+	resultMerge()
 	for name, diff := range globalResult.info {
 		if diff > int(*globalConfig.Maxerr) && !matchIgnore(name) {
 			if exceedCount == 0 {
@@ -63,41 +51,28 @@ parse:
 	if exceedCount != 0 {
 		logrus.Infoln(fmt.Sprintf("(%d/%d)", exceedCount, len(globalResult.info)), exceedInfo)
 		// Rerun.
-		err = execrun()
-		if err != nil {
-			logrus.Fatalln(err)
-			return
-		}
+		execrun()
 		goto parse
 	}
 	logrus.Debugln("all success")
-	err = globalResult.merge()
-	if err != nil {
-		logrus.Fatal(err)
-		return
-	}
-	err = globalResult.writeLocal(*globalConfig.File)
-	if err != nil {
-		logrus.Fatal(err)
-		return
-	}
+	resultWriteLocal()
 	execAfterRun()
 }
 
-func execrun() error {
+func execrun() {
 	runcount++
 	logrus.Debugf("run id: %d", runcount)
 	if *globalConfig.MaxRun > 0 {
-		if runcount >= *globalConfig.MaxRun {
-			return errors.New("exceed maximum run count")
+		if runcount > *globalConfig.MaxRun {
+			resultWriteLocal()
+			logrus.Fatalln("run: exceed maximum run count")
 		}
 	}
 
 	_, err := execCommandPrint("run", *globalConfig.Run)
 	if err != nil {
-		return err
+		logrus.Fatalln(err.Error())
 	}
-	return nil
 }
 
 func execBeforeRun() {
@@ -119,6 +94,28 @@ func execAfterRun() {
 			logrus.Fatalln("afterrun:", err.Error())
 		}
 		logrus.Debugln("afterrun success")
+	}
+}
+
+func resultMerge() {
+	if globalResult == nil {
+		res, err := newBenchmarkResult()
+		if err != nil {
+			logrus.Fatalln(err)
+		}
+		globalResult = res
+	} else {
+		err := globalResult.merge()
+		if err != nil {
+			logrus.Fatal(err)
+		}
+	}
+}
+
+func resultWriteLocal() {
+	err := globalResult.writeLocal(*globalConfig.File)
+	if err != nil {
+		logrus.Fatal(err)
 	}
 }
 
