@@ -65,6 +65,7 @@ func execrun() {
 	if *globalConfig.MaxRun > 0 {
 		if runcount > *globalConfig.MaxRun {
 			resultWriteLocal()
+			execAfterRun()
 			logrus.Fatalln("run: exceed maximum run count")
 		}
 	}
