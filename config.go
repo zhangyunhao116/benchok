@@ -14,7 +14,7 @@ var (
 	debug = flag.Bool("v", false, "debug mode")
 
 	defaultMaxErr uint    = 15
-	defaultMaxRun         = -1
+	defaultMaxRun         = 3
 	defaultAlpha  float64 = 0.01
 
 	runcount = 0
