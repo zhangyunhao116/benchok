@@ -103,8 +103,17 @@ func validConfig() {
 }
 
 func readLocalConfig(name string) *Config {
-	content, err := os.ReadFile(".benchok.yml")
-	if err != nil {
+	var (
+		content []byte
+		err     error
+	)
+	for _, v := range []string{".benchok.yml", ".benchok.yaml"} {
+		content, err = os.ReadFile(v)
+		if err == nil {
+			break
+		}
+	}
+	if content == nil || err != nil {
 		logrus.Debugln("config:" + err.Error())
 		return nil
 	}
