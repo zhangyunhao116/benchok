@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"os"
 
+	_ "embed"
+
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
 var (
-	debug = flag.Bool("v", false, "debug mode")
+	debug    = flag.Bool("v", false, "debug mode")
+	initMode = flag.Bool("init", false, "create init config file")
+	//go:embed init.yml
+	initConfigFile []byte
 
 	defaultMaxErr uint    = 15
 	defaultMaxRun         = 3

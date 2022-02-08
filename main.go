@@ -5,6 +5,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -22,6 +24,17 @@ func main() {
 	flag.Parse()
 	if *debug {
 		logrus.SetLevel(logrus.DebugLevel)
+	}
+	if *initMode { // init config file then return
+		const configFileName = ".benchok.yml"
+		if _, err := os.Stat(configFileName); errors.Is(err, os.ErrNotExist) {
+			if err := ioutil.WriteFile(configFileName, initConfigFile, 0660); err != nil {
+				logrus.Fatal("init config file error:", err)
+			}
+		} else {
+			logrus.Fatal("init config exists: ", configFileName)
+		}
+		return
 	}
 	readConfig()
 	// Start.
